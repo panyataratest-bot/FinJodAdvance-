@@ -40,18 +40,7 @@
 
     .card{ background:var(--bg2); border:1px solid var(--line); border-radius:18px; padding:1.25rem }
     .muted{ color:var(--muted) } .right{ text-align:right }
-
-    /* --- Chart layout fix to stop flicker --- */
-    .card.half { 
-      flex: 1 1 calc(50% - 0.5rem); /* 50% – half of row gap */
-      min-width: 360px;             /* prevent wrap/unwrap oscillation */
-    }
-    @media (max-width: 980px){
-      .card.half { flex-basis:100%; min-width:0; }
-    }
-
-    .chart-wrap{ height:260px; width:100%; contain: layout size; }
-    .chart-wrap canvas{ width:100% !important; height:100% !important; display:block }
+    .chart-wrap{ height:260px; width:100% } .chart-wrap canvas{ width:100% !important; height:100% !important; display:block }
 
     table{ width:100%; border-collapse:collapse; table-layout:fixed; font-size:.98rem }
     th,td{ border-bottom:1px solid var(--line); padding:.8rem .5rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
@@ -103,6 +92,13 @@
     /* ตารางหนี้: ให้คอลัมน์ปุ่มไม่ถูกตัด */
     #tblDebts td:last-child { overflow: visible; }
     #tblDebts td:last-child .actions { display:flex; gap:.5rem; }
+
+    /* === Success Popup === */
+    #pop { position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:130; background:transparent }
+    #pop.show{ display:flex; }
+    .pop-box{ display:flex; align-items:center; gap:.6rem; background:var(--panel); border:1px solid rgba(0,200,150,.35); border-radius:14px; padding:.9rem 1.1rem; box-shadow:0 16px 40px rgba(0,0,0,.55) }
+    .pop-icon{ width:26px; height:26px; border-radius:50%; background:var(--green); color:#052a27; font-weight:900; display:flex; align-items:center; justify-content:center }
+    .pop-msg{ font-weight:700 }
   </style>
 </head>
 <body>
@@ -190,7 +186,7 @@
             <div class="muted" style="font-size:.9rem">* รายการจากแท็บ “หนี้”</div>
           </div>
 
-          <!-- ช่องกรอก “จ่ายดอก/จ่ายต้น” เมื่อเลือก จ่ายหนี้ -->
+          <!-- ช่องจ่ายดอก/จ่ายต้น เมื่อเลือก จ่ายหนี้ -->
           <div class="col hide" id="colDebtRepayFields">
             <label>รายละเอียดการจ่ายหนี้</label>
             <div class="row" style="gap:.5rem; margin:0">
@@ -376,12 +372,12 @@
 
         <!-- Charts -->
         <div class="row">
-          <div class="card half">
+          <div class="card" style="flex:1 1 48%">
             <div class="muted" style="margin-bottom:.5rem">รายจ่ายตามหมวด</div>
             <div id="noDataExp" class="muted hide">ยังไม่มีข้อมูลในช่วงนี้</div>
             <div class="chart-wrap"><canvas id="chartExp"></canvas></div>
           </div>
-          <div class="card half">
+          <div class="card" style="flex:1 1 48%">
             <div class="muted" style="margin-bottom:.5rem">กระแสเงินสด (รายวัน & สะสม)</div>
             <div id="noDataFlow" class="muted hide">ยังไม่มีข้อมูลในช่วงนี้</div>
             <div class="chart-wrap"><canvas id="chartFlow"></canvas></div>
@@ -389,12 +385,12 @@
         </div>
 
         <div class="row">
-          <div class="card half">
+          <div class="card" style="flex:1 1 48%">
             <div class="muted" style="margin-bottom:.5rem">หนี้คงเหลือรวม (จำลองรายวัน)</div>
             <div id="noDataDebtTS" class="muted hide">ยังไม่มีข้อมูลหนี้ในช่วงนี้</div>
             <div class="chart-wrap"><canvas id="chartDebtTS"></canvas></div>
           </div>
-          <div class="card half">
+          <div class="card" style="flex:1 1 48%">
             <div class="muted" style="margin-bottom:.5rem">จ่ายต้น vs จ่ายดอก (รายเดือน)</div>
             <div id="noDataPI" class="muted hide">ยังไม่มีธุรกรรมหนี้ในช่วงนี้</div>
             <div class="chart-wrap"><canvas id="chartPI"></canvas></div>
@@ -507,6 +503,14 @@
     </div>
   </div>
 
+  <!-- Success Popup -->
+  <div id="pop" aria-live="assertive" role="alertdialog" aria-modal="true">
+    <div class="pop-box">
+      <div class="pop-icon">✓</div>
+      <div class="pop-msg" id="popMsg">บันทึกสำเร็จ</div>
+    </div>
+  </div>
+
   <div id="toast" aria-live="polite" role="status">แจ้งเตือน</div>
   <div id="overlay"><div class="spinner" aria-hidden="true"></div></div>
 
@@ -530,6 +534,7 @@ const $$ = s => Array.from(document.querySelectorAll(s));
 const fmt = n => Number(n||0).toLocaleString('th-TH',{minimumFractionDigits:2, maximumFractionDigits:2});
 const esc = (s='') => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 function toast(msg, ok=true){ const el=$('#toast'); el.textContent=msg; el.style.background=ok?'#00c896':'#d63031'; el.style.opacity='1'; setTimeout(()=>el.style.opacity='0',2400); }
+function popSuccess(msg='สำเร็จ'){ const p=$('#pop'); $('#popMsg').textContent=msg; p.classList.add('show'); clearTimeout(popSuccess._t); popSuccess._t=setTimeout(()=> p.classList.remove('show'), 1300); }
 const showOverlay = (on)=> $('#overlay').classList.toggle('show', !!on);
 const toYMD = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 function todayISO(){ return toYMD(new Date()); }
@@ -541,6 +546,16 @@ const groupBy = (arr, key) => arr.reduce((a,x)=> ((a[key(x)] = a[key(x)]||[]).pu
 const runningSum = (arr)=>{ let s=0; return arr.map(v=>(s+=v,s)); };
 const safeKey = (x)=> `${(x.date||'').slice(0,10)}T${(x.time||'00:00:00').slice(0,8)}`;
 const clamp = (v,min,max)=> Math.min(max, Math.max(min, v||0));
+
+/* Clear form on Add tab */
+function clearAddForm(){
+  $('#txDate').value = todayISO();
+  setType('expense');
+  $('#txAmount').value=''; $('#txNote').value='';
+  $('#txInt').value=''; $('#txPrin').value='';
+  if ($('#txCat').options.length) $('#txCat').selectedIndex = 0;
+  if ($('#txDebt').options.length) $('#txDebt').selectedIndex = 0;
+}
 
 /* ===== fetch with timeout & light retry ===== */
 async function fetchJSON(url, options={}, timeoutMs=20000){
@@ -689,7 +704,7 @@ async function createCategoryFromModal(){
   cats[type] = [newCatObj, ...(cats[type]||[])];
   setType(type); populateCatSelect(); if (newCatId) $('#txCat').value = newCatId;
   closeAddCatModal();
-  toast('เพิ่มหมวดสำเร็จ'); loadCategoriesAll().catch(()=>{});
+  popSuccess('เพิ่มหมวดสำเร็จ'); loadCategoriesAll().catch(()=>{});
 }
 $('#btnAddCatSave').addEventListener('click', createCategoryFromModal);
 $('#addCatName').addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); createCategoryFromModal(); } });
@@ -713,10 +728,9 @@ function setType(type){
   $('#colCat').classList.toggle('hide', debtMode);
   $('#colDebt').classList.toggle('hide', !debtMode);
 
-  // แสดงชุดกรอกตามประเภทหนี้
   const isRepay = (type==='debt_repay');
   $('#colDebtRepayFields').classList.toggle('hide', !isRepay);
-  $('#colAmount').classList.toggle('hide', isRepay); // ซ่อนช่องยอดรวมเมื่อเป็น repay
+  $('#colAmount').classList.toggle('hide', isRepay);
 
   if (!debtMode) { populateCatSelect(); }
   else { fillDebtPickers(); }
@@ -762,48 +776,46 @@ async function quickAddCommit(q){
   const arr = cats[q.type]||[]; if (!arr.length){ toast('ยังไม่มีหมวดสำหรับชนิดนี้', false); return; }
   const payload = { date: todayISO(), type: q.type, category_id: arr[0].category_id, amount: q.amount, note: q.label };
   const r = await api('transactions/create', payload, true, true);
-  if (r.ok){ toast('บันทึกด่วนสำเร็จ'); refreshDash(true); } else toast('บันทึกด่วนไม่สำเร็จ', false);
+  if (r.ok){ popSuccess('บันทึกสำเร็จ'); refreshDash(true); } else toast('บันทึกด่วนไม่สำเร็จ', false);
 }
 $('#btnAddQA').addEventListener('click', ()=> addQA($('#qaLabel').value.trim(), $('#qaType').value, $('#qaAmount').value));
 
 /* ===== ADD TRANSACTION (รวม debt) ===== */
 function normalizeAmount(v){ const n=Number(v); if (!isFinite(n) || n<=0) return NaN; return Math.round(n*100)/100; }
-async function saveTx(keep=false){
+async function saveTx(){
   const type = $('#txType').value;
   const date = $('#txDate').value;
   const note = $('#txNote').value.trim();
-  if (!date){ $('#txMsg').textContent='กรุณาเลือกวันที่'; toast('กรุณาเลือกวันที่', false); return; }
+  if (!date){ toast('กรุณาเลือกวันที่', false); return; }
 
   $('#btnSave').disabled = true;
 
   // โหมดหนี้
   if (type==='debt_repay' || type==='debt_borrow'){
     const debt_id = $('#txDebt').value;
-    if (!debt_id){ $('#txMsg').textContent='กรุณาเลือกเจ้าหนี้'; toast('กรุณาเลือกเจ้าหนี้', false); $('#btnSave').disabled=false; return; }
+    if (!debt_id){ toast('กรุณาเลือกเจ้าหนี้', false); $('#btnSave').disabled=false; return; }
 
     if (type==='debt_repay'){
       const interest = Number($('#txInt').value||0);
       const principal = Number($('#txPrin').value||0);
       const amount = Math.round((interest + principal) * 100) / 100;
-      if (!(isFinite(amount) && amount>0)){ $('#txMsg').textContent='ใส่ยอดจ่ายดอก/จ่ายต้นให้ถูกต้อง'; toast('จำนวนเงินไม่ถูกต้อง', false); $('#btnSave').disabled=false; return; }
+      if (!(isFinite(amount) && amount>0)){ toast('ใส่ยอดจ่ายดอก/จ่ายต้นให้ถูกต้อง', false); $('#btnSave').disabled=false; return; }
       const r = await api('debts/repay', { debt_id, date, amount, interest_paid:interest, principal_paid:principal, note }, true, true);
       $('#btnSave').disabled = false;
       if (r.ok){
-        toast('บันทึกจ่ายหนี้สำเร็จ');
-        $('#txInt').value=''; $('#txPrin').value=''; $('#txNote').value='';
-        if (!keep){ setType('expense'); $('#txDate').value = todayISO(); }
-        await loadDebtsCache(); refreshDash(true); loadDebtsUI(); $('#txInt').focus();
+        popSuccess('บันทึกจ่ายหนี้สำเร็จ');
+        clearAddForm();
+        await loadDebtsCache(); refreshDash(true); loadDebtsUI(); $('#txAmount').focus();
       } else { toast(r.message||'บันทึกไม่สำเร็จ', false); }
       return;
     } else {
       const amount = normalizeAmount($('#txAmount').value);
-      if (isNaN(amount)){ $('#txMsg').textContent='จำนวนเงินไม่ถูกต้อง'; toast('จำนวนเงินไม่ถูกต้อง', false); $('#btnSave').disabled=false; return; }
+      if (isNaN(amount)){ toast('จำนวนเงินไม่ถูกต้อง', false); $('#btnSave').disabled=false; return; }
       const r = await api('debts/borrow', { debt_id, date, amount, note }, true, true);
       $('#btnSave').disabled = false;
       if (r.ok){
-        toast('บันทึกกู้หนี้สำเร็จ');
-        $('#txAmount').value=''; $('#txNote').value='';
-        if (!keep){ setType('expense'); $('#txDate').value = todayISO(); }
+        popSuccess('บันทึกกู้หนี้สำเร็จ');
+        clearAddForm();
         await loadDebtsCache(); refreshDash(true); loadDebtsUI(); $('#txAmount').focus();
       } else { toast(r.message||'บันทึกไม่สำเร็จ', false); }
       return;
@@ -813,23 +825,22 @@ async function saveTx(keep=false){
   // โหมดทั่วไป
   const amount = normalizeAmount($('#txAmount').value);
   const category_id = $('#txCat').value;
-  if (isNaN(amount)){ $('#txMsg').textContent='จำนวนเงินไม่ถูกต้อง'; toast('จำนวนเงินไม่ถูกต้อง', false); $('#btnSave').disabled=false; return; }
-  if (!category_id){ $('#txMsg').textContent='กรุณาเลือกหมวด'; toast('กรุณาเลือกหมวด', false); $('#btnSave').disabled=false; return; }
+  if (isNaN(amount)){ toast('จำนวนเงินไม่ถูกต้อง', false); $('#btnSave').disabled=false; return; }
+  if (!category_id){ toast('กรุณาเลือกหมวด', false); $('#btnSave').disabled=false; return; }
 
   const payload = { date, type, category_id, amount, note };
   const r = await api('transactions/create', payload, true, true);
   $('#btnSave').disabled = false;
   if (r.ok){
-    $('#txMsg').textContent='บันทึกแล้ว'; toast('บันทึกสำเร็จ');
-    $('#txAmount').value=''; $('#txNote').value='';
-    if (!keep){ setType('expense'); $('#txDate').value = todayISO(); }
+    popSuccess('บันทึกสำเร็จ');
+    clearAddForm();
     refreshDash(true); $('#txAmount').focus();
   } else {
-    $('#txMsg').textContent='ไม่สำเร็จ'; toast('บันทึกไม่สำเร็จ', false);
+    toast('บันทึกไม่สำเร็จ', false);
   }
 }
-$('#btnSave').addEventListener('click', ()=> saveTx($('#keepSwitch')?.checked));
-$('#tab-add').addEventListener('keydown', (e)=>{ if (e.key==='Enter'){ e.preventDefault(); saveTx($('#keepSwitch')?.checked); } });
+$('#btnSave').addEventListener('click', ()=> saveTx());
+$('#tab-add').addEventListener('keydown', (e)=>{ if (e.key==='Enter'){ e.preventDefault(); saveTx(); } });
 
 /* ===== DASHBOARD ===== */
 let chartExp=null, chartFlow=null, chartSavCum=null, chartDebtTS=null, chartPI=null;
@@ -851,6 +862,12 @@ $('#btn30').addEventListener('click', ()=> setRangeDaysBack(30));
 $('#btnMonth').addEventListener('click', ()=>{ const mb=monthBoundsOf(new Date()); $('#fFrom').value=mb.start; $('#fTo').value=mb.end; onRangeChange(); });
 $('#btnYear').addEventListener('click', ()=>{ const y=new Date().getFullYear(); $('#fFrom').value=`${y}-01-01`; $('#fTo').value=`${y}-12-31`; onRangeChange(); });
 $('#btnRefresh').addEventListener('click', ()=> refreshDash());
+$('#btnSaveBudget').addEventListener('click', async ()=>{
+  const mk = monthKeyFromRange();
+  const ok = await saveMonthSettingsToAPI(mk, $('#budgetThisMonth').value, $('#savingGoalThisMonth').value);
+  if (ok){ popSuccess('บันทึกงบ/เป้าออมสำเร็จ'); await refreshDash(true); }
+  else toast('บันทึกงบ/เป้าออมไม่สำเร็จ', false);
+});
 function onRangeChange(){ updateRangeUI(); refreshDash(); }
 $('#fFrom').addEventListener('change', onRangeChange);
 $('#fTo').addEventListener('change', onRangeChange);
@@ -937,7 +954,7 @@ $('#btnAddDebt').addEventListener('click', async ()=>{
   if (!lender_name || !isFinite(annual_rate) || annual_rate<0){ toast('กรอกชื่อและอัตราดอกให้ถูกต้อง', false); return; }
   const payload = { lender_name, annual_rate, principal_initial: isFinite(principal_initial)&&principal_initial>0? principal_initial:0, start_date: todayISO() };
   const r = await api('debts/create', payload, true, true);
-  if (r.ok){ toast('เพิ่มเจ้าหนี้สำเร็จ'); $('#dName').value=''; $('#dRate').value=''; $('#dPrincipal').value=''; await loadDebtsUI(); fillDebtPickers(); refreshDash(true); }
+  if (r.ok){ popSuccess('เพิ่มเจ้าหนี้สำเร็จ'); $('#dName').value=''; $('#dRate').value=''; $('#dPrincipal').value=''; await loadDebtsUI(); fillDebtPickers(); refreshDash(true); }
   else toast(r.message||'ไม่สำเร็จ', false);
 });
 $('#btnDebtQuick').addEventListener('click', async ()=>{
@@ -949,13 +966,13 @@ $('#btnDebtQuick').addEventListener('click', async ()=>{
     const amount = Math.round((interest + principal) * 100)/100;
     if (!(isFinite(amount)&&amount>0)){ toast('ใส่ยอดจ่ายดอก/จ่ายต้นให้ถูกต้อง', false); return; }
     const r = await api('debts/repay', { debt_id, date, amount, interest_paid:interest, principal_paid:principal, note }, true, true);
-    if (r.ok){ toast('บันทึกสำเร็จ'); $('#dqInt').value=''; $('#dqPrin').value=''; $('#dqNote').value=''; await loadDebtsUI(); refreshDash(true); }
+    if (r.ok){ popSuccess('บันทึกสำเร็จ'); $('#dqInt').value=''; $('#dqPrin').value=''; $('#dqNote').value=''; await loadDebtsUI(); refreshDash(true); }
     else toast(r.message||'บันทึกไม่สำเร็จ', false);
   }else{
     const amount = Number($('#dqAmount').value||0);
     if (!(isFinite(amount)&&amount>0)){ toast('ใส่ยอดให้ถูกต้อง', false); return; }
     const r = await api('debts/borrow', { debt_id, date, amount, note }, true, true);
-    if (r.ok){ toast('บันทึกสำเร็จ'); $('#dqAmount').value=''; $('#dqNote').value=''; await loadDebtsUI(); refreshDash(true); }
+    if (r.ok){ popSuccess('บันทึกสำเร็จ'); $('#dqAmount').value=''; $('#dqNote').value=''; await loadDebtsUI(); refreshDash(true); }
     else toast(r.message||'บันทึกไม่สำเร็จ', false);
   }
 });
@@ -1055,7 +1072,7 @@ async function updateBudgetUI(expenseTotal, savingNet, mk){
   $('#savingGoalStatus').textContent = sTxt;
 }
 
-/* Charts: expense by category */
+/* Charts */
 function drawExpByCat(items, mapCat){
   const panelNo = $('#noDataExp'); if (chartExp) chartExp.destroy();
   const exps = items.filter(x=>x.type==='expense');
@@ -1067,10 +1084,9 @@ function drawExpByCat(items, mapCat){
   chartExp = new Chart($('#chartExp'), {
     type:'bar',
     data:{ labels, datasets:[{ label:'จำนวน (บาท)', data, backgroundColor:'rgba(233,30,99,0.65)', borderColor:'rgba(233,30,99,1)', borderWidth:1 }] },
-    options:{ responsive:true, resizeDelay:150, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true }}, plugins:{ legend:{ display:false } } }
+    options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true }}, plugins:{ legend:{ display:false } } }
   });
 }
-/* Charts: cashflow */
 function drawFlow(items){
   const panelNo = $('#noDataFlow'); if (chartFlow) chartFlow.destroy();
   if (!items.length){ panelNo.classList.remove('hide'); chartFlow=null; return; }
@@ -1091,10 +1107,9 @@ function drawFlow(items){
         { label:'คงเหลือสะสม', data:netCumulative, borderColor:'#6c8cff', backgroundColor:'rgba(108,140,255,.15)', tension:.35, fill:false }
       ]
     },
-    options:{ responsive:true, resizeDelay:150, maintainAspectRatio:false, animation:false, interaction:{ mode:'index', intersect:false }, scales:{ y:{ beginAtZero:true } } }
+    options:{ responsive:true, maintainAspectRatio:false, animation:false, interaction:{ mode:'index', intersect:false }, scales:{ y:{ beginAtZero:true } } }
   });
 }
-/* Charts: saving cumulative */
 function drawSavingCum(items){
   const panelNo = $('#noDataSav'); if (chartSavCum) chartSavCum.destroy();
   const byDateDep = groupBy(items.filter(x=>x.type==='saving'), x=> x.date);
@@ -1111,7 +1126,7 @@ function drawSavingCum(items){
   chartSavCum = new Chart($('#chartSavCum'), {
     type:'line',
     data:{ labels: dates, datasets:[{ label:'ออมสุทธิสะสม', data:cum, borderColor:'#2dd4bf', backgroundColor:'rgba(45,212,191,.15)', tension:.35, fill:false }] },
-    options:{ responsive:true, resizeDelay:150, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true }}}
+    options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true }}}
   });
 }
 
@@ -1175,7 +1190,7 @@ $('#btnUpdate').addEventListener('click', async ()=>{
   $('#btnUpdate').disabled = true;
   const r = await api('transactions/update', payload, true, true);
   $('#btnUpdate').disabled = false;
-  if (r.ok){ toast('อัปเดตสำเร็จ'); closeEdit(); refreshDash(true); }
+  if (r.ok){ popSuccess('บันทึกแก้ไขสำเร็จ'); closeEdit(); refreshDash(true); }
   else toast(r.message||'อัปเดตไม่สำเร็จ', false);
 });
 $('#btnDelete').addEventListener('click', async ()=>{
@@ -1193,7 +1208,7 @@ $('#btnDelete').addEventListener('click', async ()=>{
   $('#btnDelete').disabled = true;
   const r = await api('transactions/delete', { tx_id }, true, false);
   $('#btnDelete').disabled = false;
-  if (r.ok){ toast('ลบเรียบร้อย'); closeEdit(); refreshDash(true); }
+  if (r.ok){ popSuccess('ลบสำเร็จ'); closeEdit(); refreshDash(true); }
   else toast(r.message||'ลบไม่สำเร็จ', false);
 });
 
@@ -1276,7 +1291,7 @@ $('#btnEditDebtSave').addEventListener('click', async ()=>{
   if (!name){ toast('กรุณากรอกชื่อเจ้าหนี้', false); return; }
   if (!isFinite(rate) || rate<0){ toast('อัตราดอกไม่ถูกต้อง', false); return; }
   const r = await api('debts/update', { debt_id:id, lender_name:name, annual_rate:Math.round(rate*100)/100 }, true, true);
-  if (r.ok){ toast('อัปเดตสำเร็จ'); closeDebtEdit(); await loadDebtsUI(); refreshDash(true); }
+  if (r.ok){ popSuccess('บันทึกแก้ไขสำเร็จ'); closeDebtEdit(); await loadDebtsUI(); refreshDash(true); }
   else toast(r.message||'อัปเดตไม่สำเร็จ', false);
 });
 $('#tblDebts').addEventListener('click', async (e)=>{
@@ -1296,31 +1311,22 @@ $('#tblDebts').addEventListener('click', async (e)=>{
     });
     if (!ok) return;
     const r = await api('debts/close', { debt_id:id }, true, true);
-    if (r.ok){ toast('ปิดบัญชีแล้ว'); await loadDebtsUI(); refreshDash(true); }
+    if (r.ok){ popSuccess('ปิดบัญชีสำเร็จ'); await loadDebtsUI(); refreshDash(true); }
     else toast(r.message||'ปิดบัญชีไม่สำเร็จ', false);
   }
   if (act==='edit'){ openDebtEdit(id); }
 });
 
-/* ===== Debt charts (NEW logic) ===== */
+/* ===== Debt charts (principal only) ===== */
 function normRangeForCharts(from, to){
   const today = todayISO();
   const end = (!to || to > today) ? today : to;
   return { from, end };
 }
-function dateRangeArray(from, to){
-  const out = []; const df = new Date(from), dt = new Date(to);
-  if (isNaN(df)||isNaN(dt) || df>dt) return out;
-  for (let d=new Date(df); d<=dt; d=new Date(d.getFullYear(), d.getMonth(), d.getDate()+1)){ out.push(toYMD(d)); }
-  return out;
-}
-
-/** หนี้คงเหลือรวม (จำลองรายวัน) — คิดจาก borrow (+) และ principal_paid (-) */
 async function drawDebtTimeSeries_PrincipalOnly(from, to){
   const panelNo = $('#noDataDebtTS');
   if (chartDebtTS) chartDebtTS.destroy();
   const { end } = normRangeForCharts(from, to);
-
   const r = await api('debts/tx/list', { to: end }, true, false);
   if (!r.ok){ panelNo.classList.remove('hide'); chartDebtTS=null; return; }
   const items = (r.items||[]).map(x=>({
@@ -1329,12 +1335,9 @@ async function drawDebtTimeSeries_PrincipalOnly(from, to){
     borrow: Number(x.type==='borrow' ? (x.amount||0) : 0),
     prinPaid: Number(x.type==='repay' ? (x.principal_paid||0) : 0)
   }));
-
   if (!items.length){ panelNo.classList.remove('hide'); chartDebtTS=null; return; }
-
   const start = from;
   const baseBefore = items.filter(x=> x.date < start).reduce((s,x)=> s + x.borrow - x.prinPaid, 0);
-
   const days = dateRangeArray(start, end);
   const deltaByDate = {};
   for (const it of items){
@@ -1342,17 +1345,11 @@ async function drawDebtTimeSeries_PrincipalOnly(from, to){
       deltaByDate[it.date] = (deltaByDate[it.date]||0) + it.borrow - it.prinPaid;
     }
   }
-
   let outstanding = baseBefore;
-  const series = days.map(d=>{
-    outstanding += (deltaByDate[d]||0);
-    return clamp(outstanding, 0, Number.POSITIVE_INFINITY);
-  });
-
+  const series = days.map(d=>{ outstanding += (deltaByDate[d]||0); return clamp(outstanding,0,Number.POSITIVE_INFINITY); });
   const hasAny = series.some(v=> v>0);
   if (!hasAny){ panelNo.classList.remove('hide'); chartDebtTS=null; return; }
   panelNo.classList.add('hide');
-
   chartDebtTS = new Chart($('#chartDebtTS'), {
     type:'line',
     data:{ labels: days, datasets:[{
@@ -1360,18 +1357,15 @@ async function drawDebtTimeSeries_PrincipalOnly(from, to){
       data: series,
       borderColor:'#6c8cff', backgroundColor:'rgba(108,140,255,.15)', tension:.35, fill:false
     }]},
-    options:{ responsive:true, resizeDelay:150, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true } } }
+    options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true } } }
   });
 }
-
-/** จ่ายต้น vs จ่ายดอก (รายเดือน) */
 async function drawPrincipalInterestMonthly_Manual(from, to){
   const panelNo = $('#noDataPI'); if (chartPI) chartPI.destroy();
   const { end } = normRangeForCharts(from, to);
   const r = await api('debts/tx/list', { from, to:end }, true, false);
   if (!r.ok || !(r.items||[]).length){ panelNo.classList.remove('hide'); chartPI=null; return; }
   panelNo.classList.add('hide');
-
   const g = {};
   for (const x of r.items){
     if (String(x.type)!=='repay') continue;
@@ -1391,8 +1385,16 @@ async function drawPrincipalInterestMonthly_Manual(from, to){
         { label:'จ่ายต้น (บาท)', data:prin, borderColor:'#00c896', backgroundColor:'rgba(0,200,150,.15)', tension:.35, fill:false },
         { label:'จ่ายดอก (บาท)', data:intr, borderColor:'#ffb020', backgroundColor:'rgba(255,176,32,.15)', tension:.35, fill:false },
       ] },
-    options:{ responsive:true, resizeDelay:150, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true }}}
+    options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true }}}
   });
+}
+
+/* ===== Small utils ===== */
+function dateRangeArray(from, to){
+  const out = []; const df = new Date(from), dt = new Date(to);
+  if (isNaN(df)||isNaN(dt) || df>dt) return out;
+  for (let d=new Date(df); d<=dt; d=new Date(d.getFullYear(), d.getMonth(), d.getDate()+1)){ out.push(toYMD(d)); }
+  return out;
 }
 
 /* ===== INIT ===== */
@@ -1403,7 +1405,7 @@ function init(){
 }
 init();
 
-/* ===== [ADD-ON] Quick Add: category picker ===== */
+/* ===== [ADD-ON] Quick Add: category picker (เดิม) ===== */
 (function setupQACategoryUI(){
   const row = document.querySelector('#tab-add .quickadd .row');
   if (!row) return;
@@ -1453,7 +1455,7 @@ function _findCat(type, category_id){ const list = (typeof cats !== 'undefined' 
     const payload = { date: (typeof todayISO === 'function') ? todayISO() : (new Date().toISOString().slice(0,10)), type: t, category_id, amount: q?.amount, note: q?.label };
     try{
       const r = await api('transactions/create', payload, true, true);
-      if (r.ok){ toast('บันทึกด่วนสำเร็จ'); if (typeof refreshDash==='function') refreshDash(true); }
+      if (r.ok){ popSuccess('บันทึกสำเร็จ'); if (typeof refreshDash==='function') refreshDash(true); }
       else toast('บันทึกด่วนไม่สำเร็จ', false);
     }catch(e){ toast('บันทึกด่วนไม่สำเร็จ', false); }
   };
