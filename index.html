@@ -194,7 +194,7 @@
             <button id="btnSave" class="btn-green" style="min-width:180px">บันทึกรายการ</button>
           </div>
         </div>
-        <div class="card quickadd" style="margin-top: 1rem;">
+        <div class="card quickadd hide" style="margin-top: 1rem;">
           <div class="muted" style="margin-bottom:.5rem">บันทึกด่วน</div>
           <div class="quick-wrap" id="quickWrap"></div>
           <div class="row" style="margin-top:.5rem">
@@ -222,7 +222,7 @@
             <div class="col" style="align-self:flex-end"><button id="btnAddDebt" class="btn-blue">+ เพิ่มเจ้าหนี้</button></div>
           </div>
         </div>
-        <div class="card" style="margin-bottom:1rem">
+        <div class="card hide" style="margin-bottom:1rem">
           <div class="muted" style="margin-bottom:.5rem">บันทึกหนี้ด่วน</div>
           <div class="row">
             <div class="col"><label for="dqType">ประเภท</label>
@@ -260,7 +260,7 @@
           </div>
           <div class="muted" style="margin-top:.5rem">* หนี้ที่ปิดบัญชีแล้วดูได้ใน “ประวัติธุรกรรมหนี้” ด้านล่าง</div>
         </div>
-        <div class="card">
+        <div class="card hide">
           <div class="row" style="margin-bottom:.25rem">
             <div class="col"><label for="dtFrom">จาก</label><input id="dtFrom" type="date"></div>
             <div class="col"><label for="dtTo">ถึง</label><input id="dtTo" type="date"></div>
@@ -346,7 +346,7 @@
         </div>
         <div class="row">
           <div class="card" style="flex:1 1 48%">
-            <div class="muted" style="margin-bottom:.5rem">หนี้คงเหลือรวม (จำลองรายวัน)</div>
+            <div class="muted" style="margin-bottom:.5rem">หนี้คงเหลือรวม (จำลองดอกเบี้ยรายวัน)</div>
             <div id="noDataDebtTS" class="muted hide">ยังไม่มีข้อมูลหนี้ในช่วงนี้</div>
             <div class="chart-wrap"><canvas id="chartDebtTS"></canvas></div>
           </div>
@@ -643,6 +643,11 @@ $('#btnLogout').addEventListener('click', ()=>{
 
 /* ===== CATEGORIES ===== */
 let cats = { income:[], expense:[], saving:[] };
+// ซ่อนหมวดระบบสำหรับหนี้ออกจากดรอปดาวน์ทั่วไป (ชื่อหมวดตรงกับที่ GAS ใส่)
+function _isDebtFlowCat(c){
+  const n = String(c?.name_th || '').trim();
+  return n === 'จ่ายหนี้' || n === 'กู้หนี้';
+}
 function _isWithdrawIncomeName(name){ const s = String(name||''); return /ถอน.*ออม|ออม.*ถอน|ถอนออม|ถอนเงินออม|withdraw.*(save|saving)|saving.*withdraw/i.test(s); }
 async function loadCategoriesAll(){
   for (const t of ['income','expense','saving']){
@@ -652,8 +657,27 @@ async function loadCategoriesAll(){
   withdrawIncomeIds = new Set((cats.income||[]).filter(c=> _isWithdrawIncomeName(c.name_th)).map(c=> c.category_id));
 }
 function populateCatSelect(){
-  const t = $('#txType').value; const sel = $('#txCat'); sel.innerHTML='';
-  (cats[t]||[]).forEach(c=>{ const o=document.createElement('option'); o.value=c.category_id; o.textContent=c.name_th; sel.appendChild(o); });
+  const t = $('#txType').value;
+  const sel = $('#txCat');
+  sel.innerHTML = '';
+
+  // กรองหมวด “จ่ายหนี้/กู้หนี้” ออกจากดรอปดาวน์ปกติ
+  (cats[t] || [])
+    .filter(c => !_isDebtFlowCat(c))
+    .forEach(c => {
+      const o = document.createElement('option');
+      o.value = c.category_id;
+      o.textContent = c.name_th;
+      sel.appendChild(o);
+    });
+
+  // กันเคสไม่มีหมวดเหลือ
+  if (!sel.options.length){
+    const o = document.createElement('option');
+    o.value = '';
+    o.textContent = '— ไม่มีหมวดสำหรับประเภทนี้ —';
+    sel.appendChild(o);
+  }
 }
 $('#txType').addEventListener('change', populateCatSelect);
 
@@ -958,7 +982,7 @@ async function refreshDash(silent){
   drawSavingCum(lastItems);
   renderTable(lastItems, mapCat);
 
-  await drawDebtTimeSeries_PrincipalOnly(from, to);
+  await drawDebtNetTotalOverTime(from, to);
   await drawPrincipalInterestMonthly_Manual(from, to);
 }
 async function updateBudgetUI(expenseTotal, savingNet, mk){
@@ -1367,41 +1391,147 @@ function normRangeForCharts(from, to){
   const end = (!to || to > today) ? today : to;
   return { from, end };
 }
-async function drawDebtTimeSeries_PrincipalOnly(from, to){
+async function drawDebtNetTotalOverTime(from, to){
   const panelNo = $('#noDataDebtTS');
   if (chartDebtTS) chartDebtTS.destroy();
-  const { end } = normRangeForCharts(from, to);
-  const r = await api('debts/tx/list', { to: end }, true, false);
-  if (!r.ok){ panelNo.classList.remove('hide'); chartDebtTS=null; return; }
-  const items = (r.items||[]).map(x=>({
-    date: String(x.date||''),
-    type: String(x.type||''),
-    borrow: Number(x.type==='borrow' ? (x.amount||0) : 0),
-    prinPaid: Number(x.type==='repay' ? (x.principal_paid||0) : 0)
+
+  // จำกัดปลายทางไม่ให้เกิน "วันนี้"
+  const today = todayISO();
+  const end = (!to || to > today) ? today : to;
+
+  // สร้างช่วงวัน
+  const days = dateRangeArray(from, end);
+  if (!days.length){ panelNo.classList.remove('hide'); chartDebtTS = null; return; }
+
+  // 1) โหลดรายการหนี้ (อัตราดอก, วันเริ่ม, ยอดตั้งต้น/คงเหลือ)
+  await loadDebtsCache(); // เติม debtsCache ให้ใหม่ล่าสุด
+  const debts = (debtsCache || []).map(d => ({
+    id: String(d.debt_id),
+    name: d.lender_name || '',
+    rate: Number(d.annual_rate || 0),          // ต่อปี (%)
+    start: (d.start_date || d.created_at || '').slice(0,10) || from,
+    p0: Number(d.principal_initial || 0),      // ยอดตั้งต้นตอนสร้าง
+    pcur: Number(d.principal_current || 0),    // ยอดเงินต้นปัจจุบัน (fallback)
+    accrued0: Number(d.accrued_interest || 0), // ดอกค้าง ณ ปัจจุบัน (มีไว้เป็นข้อมูลประกอบ)
   }));
-  if (!items.length){ panelNo.classList.remove('hide'); chartDebtTS=null; return; }
-  const start = from;
-  const baseBefore = items.filter(x=> x.date < start).reduce((s,x)=> s + x.borrow - x.prinPaid, 0);
-  const days = dateRangeArray(start, end);
-  const deltaByDate = {};
-  for (const it of items){
-    if (it.date >= start && it.date <= end){
-      deltaByDate[it.date] = (deltaByDate[it.date]||0) + it.borrow - it.prinPaid;
+
+  // ถ้าไม่มีหนี้เลย
+  if (!debts.length){ panelNo.classList.remove('hide'); chartDebtTS = null; return; }
+
+  // 2) โหลด TX หนี้ถึง end เพื่อจำลองรายวัน (ไม่ไปอนาคต)
+  const rTx = await api('debts/tx/list', { to: end }, true, false);
+  const txItems = (rTx.ok ? (rTx.items||[]) : []).map(x => ({
+    date: String(x.date||'').slice(0,10),
+    debt_id: String(x.debt_id||''),
+    type: String(x.type||''), // 'borrow' | 'repay'
+    amount: Number(x.amount||0),
+    principal_paid: Number(x.principal_paid||0),
+    interest_paid: Number(x.interest_paid||0),
+  }));
+
+  // จัดกลุ่ม TX ต่อหนี้-ต่อวัน
+  const txByDebtDate = {};
+  for (const t of txItems){
+    const key = `${t.debt_id}__${t.date}`;
+    (txByDebtDate[key] ||= []).push(t);
+  }
+
+  // 3) เตรียมสถานะเริ่มต้นของแต่ละหนี้ ณ วันก่อน from
+  //    ใช้ p0 ถ้ามีและ start < from; ถ้าไม่มี p0 ให้ fallback เป็น pcur (กรณีสร้างภายหลังหรือ snapshot)
+  const daily = []; // ผลรวมรายวัน (principal + accrued)
+  const ONE_DAY_RATE = (annualPercent) => (Number(annualPercent||0) / 100) / 365;
+
+  // สร้างสำเนาสถานะหนี้เพื่อจำลอง
+  const states = debts.map(d => {
+    // กำหนดยอดตั้งต้น ณ "ก่อน from"
+    let principal = 0;
+    if (d.p0 > 0 && d.start && d.start < from) {
+      principal = d.p0;
+    } else if (d.pcur > 0 && d.start && d.start < from) {
+      // ถ้าไม่มี p0 แต่มี pcur และเริ่มก่อนช่วง ให้ใช้ pcur เป็นฐาน
+      principal = d.pcur;
+    }
+    return {
+      id: d.id,
+      rate: d.rate,
+      start: d.start,
+      principal,
+      accrued: 0, // เริ่มดอกค้างจาก 0 (จะสะสมจากวันแรกของช่วงเป็นต้นไป)
+    };
+  });
+
+  // ก่อนเริ่มวนวัน: รวมผลจาก TX ที่เกิด "ก่อน from" เข้าไปใน principal (เฉพาะเงินต้น)
+  for (const st of states){
+    // หาจาก tx ที่เกิดก่อนช่วงของหนี้นี้
+    const txBefore = txItems
+      .filter(t => t.debt_id === st.id && t.date < from)
+      .sort((a,b)=> a.date.localeCompare(b.date));
+    // เติม/หักยอดเงินต้นตามลำดับเวลา
+    for (const t of txBefore){
+      if (t.type === 'borrow') st.principal += t.amount;
+      if (t.type === 'repay')  st.principal = Math.max(0, st.principal - t.principal_paid);
+      // ดอกที่เคยจ่ายก่อนช่วงเราไม่ตามย้อนหลัง ให้เริ่มสะสมดอกใหม่ในช่วงที่เลือกดู
     }
   }
-  let outstanding = baseBefore;
-  const series = days.map(d=>{ outstanding += (deltaByDate[d]||0); return clamp(outstanding,0,Number.POSITIVE_INFINITY); });
-  const hasAny = series.some(v=> v>0);
-  if (!hasAny){ panelNo.classList.remove('hide'); chartDebtTS=null; return; }
+
+  // 4) วนแต่ละวันในช่วง: สะสมดอก + ปรับจาก TX ในวันนั้น ๆ
+  for (const day of days){
+    // 4.1 คิดดอกต่อวันจาก "principal ณ เช้าวันนั้น"
+    for (const st of states){
+      // ถ้าหนี้เปิดหลังวันนี้ ยังไม่เริ่มคิด
+      if (st.start && st.start > day) continue;
+      if (st.principal > 0){
+        st.accrued += st.principal * ONE_DAY_RATE(st.rate);
+      }
+    }
+
+    // 4.2 ปรับตาม TX ใน "day"
+    for (const st of states){
+      const key = `${st.id}__${day}`;
+      const list = txByDebtDate[key] || [];
+      if (!list.length) continue;
+      for (const t of list){
+        if (t.type === 'borrow'){
+          st.principal += t.amount; // เงินกู้เพิ่มเงินต้น
+        } else if (t.type === 'repay'){
+          // จ่ายดอก
+          st.accrued = Math.max(0, st.accrued - (t.interest_paid||0));
+          // จ่ายต้น
+          st.principal = Math.max(0, st.principal - (t.principal_paid||0));
+        }
+      }
+    }
+
+    // 4.3 รวมผล “สุทธิ” ทั้งหมดของวันนั้น
+    const sumToday = states.reduce((s,st)=> s + st.principal + st.accrued, 0);
+    daily.push(sumToday);
+  }
+
+  // 5) แสดงผล
+  const any = daily.some(v => v > 0);
+  if (!any){ panelNo.classList.remove('hide'); chartDebtTS = null; return; }
+
   panelNo.classList.add('hide');
   chartDebtTS = new Chart($('#chartDebtTS'), {
     type:'line',
-    data:{ labels: days, datasets:[{
-      label:'ยอดเงินต้นคงเหลือรวม (ไม่คิดดอก)',
-      data: series,
-      borderColor:'#6c8cff', backgroundColor:'rgba(108,140,255,.15)', tension:.35, fill:false
-    }]},
-    options:{ responsive:true, maintainAspectRatio:false, animation:false, scales:{ y:{ beginAtZero:true } } }
+    data:{
+      labels: days,
+      datasets:[{
+        label:'ยอดหนี้คงเหลือรวมสุทธิ',
+        data: daily,
+        borderColor:'#6c8cff',
+        backgroundColor:'rgba(108,140,255,.15)',
+        tension:.35,
+        fill:false
+      }]
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      animation:false,
+      scales:{ y:{ beginAtZero:true } },
+      plugins:{ legend:{ display:true }}
+    }
   });
 }
 async function drawPrincipalInterestMonthly_Manual(from, to){
@@ -1462,12 +1592,24 @@ init();
   populateQACat();
 })();
 function populateQACat(){
-  const sel = document.getElementById('qaCat'); const typeSel = document.getElementById('qaType');
+  const sel = document.getElementById('qaCat');
+  const typeSel = document.getElementById('qaType');
   if (!sel || !typeSel) return;
+
   const t = typeSel.value || 'expense';
   const list = (typeof cats !== 'undefined' && cats[t]) ? cats[t] : [];
+
   sel.innerHTML = `<option value="">เลือกหมวด (อิงตามประเภทด้านบน)</option>`;
-  list.forEach(c=>{ const o = document.createElement('option'); o.value = c.category_id; o.textContent = c.name_th; sel.appendChild(o); });
+
+  // กรอง “จ่ายหนี้/กู้หนี้” ออกจาก Quick Add เช่นกัน
+  list
+    .filter(c => !_isDebtFlowCat(c))
+    .forEach(c => {
+      const o = document.createElement('option');
+      o.value = c.category_id;
+      o.textContent = c.name_th;
+      sel.appendChild(o);
+    });
 }
 function _findCat(type, category_id){ const list = (typeof cats !== 'undefined' && cats[type]) ? cats[type] : []; return list.find(c => String(c.category_id) === String(category_id)) || null; }
 (function(){
