@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-  <title>FIN-JOD · บันทึกรายรับ–รายจ่าย–ออมเงิน + หนี้ V.2.1</title>
+  <title>FIN-JOD · บันทึกรายรับ–รายจ่าย–ออมเงิน + หนี้ V.2.2</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
   <style>
@@ -100,7 +100,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>FIN-JOD · บันทึกรายรับ–รายจ่าย–ออมเงิน + หนี้ V.2.1</h1>
+    <h1>FIN-JOD · บันทึกรายรับ–รายจ่าย V.2.2</h1>
 
     <div id="loginBox" class="card">
       <div class="row">
@@ -346,7 +346,7 @@
         </div>
         <div class="row">
           <div class="card" style="flex:1 1 48%">
-            <div class="muted" style="margin-bottom:.5rem">หนี้คงเหลือรวม (จำลองดอกเบี้ยรายวัน)</div>
+            <div class="muted" style="margin-bottom:.5rem">หนี้คงเหลือรวม (จำลองรายวัน)</div>
             <div id="noDataDebtTS" class="muted hide">ยังไม่มีข้อมูลหนี้ในช่วงนี้</div>
             <div class="chart-wrap"><canvas id="chartDebtTS"></canvas></div>
           </div>
@@ -1104,7 +1104,7 @@ function populateEditCatSelect(){
   (cats[t]||[]).forEach(c=>{ const o=document.createElement('option'); o.value=c.category_id; o.textContent=c.name_th; sel.appendChild(o); });
 }
 
-/* [แก้ไข] ปรับปรุงฟังก์ชัน `openEditById` เพื่อรองรับการแก้ไขรายการจ่ายหนี้ (โดยไม่ต้องแก้ GAS) */
+/* [แก้ไข] ฟังก์ชันแก้ไข: รองรับ “จ่ายหนี้” (แยกต้น/ดอก) */
 async function openEditById(txId){
   if (!txId){ toast('ไม่พบรหัสรายการ', false); return; }
   let it = lastItems.find(x=> String(x.tx_id)===String(txId));
@@ -1117,10 +1117,9 @@ async function openEditById(txId){
 
   const allCats = [...(cats.expense||[]), ...(cats.income||[]), ...(cats.saving||[])];
   const catMap = Object.fromEntries(allCats.map(c => [c.category_id, c.name_th]));
-  
   const catName = catMap[it.category_id] || it.category_name || '';
   const isDebtRepay = catName.includes('จ่ายหนี้');
-  
+
   $('#editBackdrop').dataset.isDebtRepay = isDebtRepay;
 
   $('#editTxId').value = it.tx_id;
@@ -1129,7 +1128,7 @@ async function openEditById(txId){
   populateEditCatSelect();
   $('#editCat').value = it.category_id;
   $('#editNote').value = it.note||'';
-  
+
   $('#editColType').classList.toggle('hide', isDebtRepay);
   $('#editColCat').classList.toggle('hide', isDebtRepay);
   $('#editColAmount').classList.toggle('hide', isDebtRepay);
@@ -1137,40 +1136,39 @@ async function openEditById(txId){
 
   $('#editBackdrop').classList.add('show');
   $('#editBackdrop').setAttribute('aria-hidden','false');
-  
+
   if (isDebtRepay) {
     $('#editPrin').value = '';
     $('#editInt').value = '';
-    
+
     $('#editColAmount').classList.remove('hide');
     $('#editAmount').readOnly = true;
     $('#editAmount').value = Number(it.amount).toFixed(2);
-    
+
     const updateTotal = () => {
-        const prin = Number($('#editPrin').value) || 0;
-        const intr = Number($('#editInt').value) || 0;
-        $('#editAmount').value = (prin + intr).toFixed(2);
+      const prin = Number($('#editPrin').value) || 0;
+      const intr = Number($('#editInt').value) || 0;
+      $('#editAmount').value = (prin + intr).toFixed(2);
     };
     $('#editPrin').oninput = updateTotal;
     $('#editInt').oninput = updateTotal;
-    
+
     $('#editType').disabled = true;
     $('#editCat').disabled = true;
 
-    // --- ส่วนที่เพิ่มเข้ามา: เรียก API `debts/tx/get` ---
+    // ดึงรายละเอียดต้น/ดอกจากฝั่งหนี้
     if (it.debt_tx_id) {
-        showOverlay(true);
-        const debtDetails = await api('debts/tx/get', { tx_id: it.debt_tx_id });
-        showOverlay(false);
-        if (debtDetails.ok && debtDetails.item) {
-            $('#editPrin').value = debtDetails.item.principal_paid || '0';
-            $('#editInt').value = debtDetails.item.interest_paid || '0';
-            updateTotal(); // อัปเดตยอดรวมอีกครั้งหลังได้ข้อมูล
-        } else {
-            toast('ไม่สามารถโหลดรายละเอียดหนี้ได้', false);
-        }
+      showOverlay(true);
+      const debtDetails = await api('debts/tx/get', { tx_id: it.debt_tx_id });
+      showOverlay(false);
+      if (debtDetails.ok && debtDetails.item) {
+        $('#editPrin').value = debtDetails.item.principal_paid || '0';
+        $('#editInt').value = debtDetails.item.interest_paid || '0';
+        updateTotal();
+      } else {
+        toast('ไม่สามารถโหลดรายละเอียดหนี้ได้', false);
+      }
     }
-
   } else {
     $('#editAmount').value = String(it.amount);
     $('#editAmount').readOnly = false;
@@ -1185,7 +1183,7 @@ function closeEdit(){ $('#editBackdrop').classList.remove('show'); $('#editBackd
 $('#btnCancel').addEventListener('click', closeEdit);
 $('#editType').addEventListener('change', populateEditCatSelect);
 
-/* [แก้ไข] ปรับปรุง Event Listener ของ `#btnUpdate` ให้เรียก API ที่ถูกต้อง */
+/* [แก้ไข] บันทึกการแก้ไข: แยกเคสจ่ายหนี้ */
 $('#btnUpdate').addEventListener('click', async ()=>{
   const tx_id = $('#editTxId').value;
   const isDebtRepay = $('#editBackdrop').dataset.isDebtRepay === 'true';
@@ -1203,23 +1201,22 @@ $('#btnUpdate').addEventListener('click', async ()=>{
       $('#btnUpdate').disabled = false;
       return;
     }
-    
+
     const originalItem = lastItems.find(it => String(it.tx_id) === String(tx_id));
     const debt_tx_id = originalItem ? originalItem.debt_tx_id : '';
     if (!debt_tx_id) {
-       toast('ไม่พบรหัสธุรกรรมหนี้ที่เชื่อมกัน', false);
-       $('#btnUpdate').disabled = false;
-       return;
+      toast('ไม่พบรหัสธุรกรรมหนี้ที่เชื่อมกัน', false);
+      $('#btnUpdate').disabled = false;
+      return;
     }
 
     const payload = {
-      debt_tx_id: debt_tx_id,
+      debt_tx_id,
       date: $('#editDate').value,
       note: $('#editNote').value.trim(),
       principal_paid: Math.round(principal_paid * 100) / 100,
       interest_paid: Math.round(interest_paid * 100) / 100
     };
-    
     r = await api('debts/tx/update', payload, true, true);
   } else {
     const amount = Number($('#editAmount').value);
@@ -1244,15 +1241,13 @@ $('#btnUpdate').addEventListener('click', async ()=>{
     popSuccess('บันทึกแก้ไขสำเร็จ');
     closeEdit();
     await refreshDash(true);
-    if (isDebtRepay) {
-        await loadDebtsUI();
-    }
+    if (isDebtRepay) await loadDebtsUI();
   } else {
     toast(r.message||'อัปเดตไม่สำเร็จ', false);
   }
 });
 
-/* [แก้ไข] เพิ่มการ refresh ตารางหนี้หลังลบรายการ */
+/* [แก้ไข] ลบแล้วรีเฟรชหนี้ด้วยเมื่อเป็นรายการจ่ายหนี้ */
 $('#btnDelete').addEventListener('click', async ()=>{
   $('#confirmMsg').textContent='ยืนยันการลบรายการนี้?';
   $('#confirmBackdrop').classList.add('show');
@@ -1274,12 +1269,9 @@ $('#btnDelete').addEventListener('click', async ()=>{
     popSuccess('ลบสำเร็จ');
     closeEdit();
     await refreshDash(true);
-    if (isDebtRepay) {
-      await loadDebtsUI();
-    }
+    if (isDebtRepay) await loadDebtsUI();
   } else toast(r.message||'ลบไม่สำเร็จ', false);
 });
-
 
 /* ===== Debts list + edit modal ===== */
 async function loadDebtsUI(){
@@ -1385,7 +1377,7 @@ $('#tblDebts').addEventListener('click', async (e)=>{
   if (act==='edit'){ openDebtEdit(id); }
 });
 
-/* ===== Debt charts (principal only) ===== */
+/* ===== Debt charts (simulation & monthly PI) ===== */
 function normRangeForCharts(from, to){
   const today = todayISO();
   const end = (!to || to > today) ? today : to;
@@ -1395,119 +1387,77 @@ async function drawDebtNetTotalOverTime(from, to){
   const panelNo = $('#noDataDebtTS');
   if (chartDebtTS) chartDebtTS.destroy();
 
-  // จำกัดปลายทางไม่ให้เกิน "วันนี้"
   const today = todayISO();
   const end = (!to || to > today) ? today : to;
 
-  // สร้างช่วงวัน
   const days = dateRangeArray(from, end);
   if (!days.length){ panelNo.classList.remove('hide'); chartDebtTS = null; return; }
 
-  // 1) โหลดรายการหนี้ (อัตราดอก, วันเริ่ม, ยอดตั้งต้น/คงเหลือ)
-  await loadDebtsCache(); // เติม debtsCache ให้ใหม่ล่าสุด
+  await loadDebtsCache();
   const debts = (debtsCache || []).map(d => ({
     id: String(d.debt_id),
     name: d.lender_name || '',
-    rate: Number(d.annual_rate || 0),          // ต่อปี (%)
+    rate: Number(d.annual_rate || 0),
     start: (d.start_date || d.created_at || '').slice(0,10) || from,
-    p0: Number(d.principal_initial || 0),      // ยอดตั้งต้นตอนสร้าง
-    pcur: Number(d.principal_current || 0),    // ยอดเงินต้นปัจจุบัน (fallback)
-    accrued0: Number(d.accrued_interest || 0), // ดอกค้าง ณ ปัจจุบัน (มีไว้เป็นข้อมูลประกอบ)
+    p0: Number(d.principal_initial || 0),
+    pcur: Number(d.principal_current || 0),
+    accrued0: Number(d.accrued_interest || 0),
   }));
-
-  // ถ้าไม่มีหนี้เลย
   if (!debts.length){ panelNo.classList.remove('hide'); chartDebtTS = null; return; }
 
-  // 2) โหลด TX หนี้ถึง end เพื่อจำลองรายวัน (ไม่ไปอนาคต)
   const rTx = await api('debts/tx/list', { to: end }, true, false);
   const txItems = (rTx.ok ? (rTx.items||[]) : []).map(x => ({
     date: String(x.date||'').slice(0,10),
     debt_id: String(x.debt_id||''),
-    type: String(x.type||''), // 'borrow' | 'repay'
+    type: String(x.type||''),
     amount: Number(x.amount||0),
     principal_paid: Number(x.principal_paid||0),
     interest_paid: Number(x.interest_paid||0),
   }));
-
-  // จัดกลุ่ม TX ต่อหนี้-ต่อวัน
   const txByDebtDate = {};
   for (const t of txItems){
     const key = `${t.debt_id}__${t.date}`;
     (txByDebtDate[key] ||= []).push(t);
   }
 
-  // 3) เตรียมสถานะเริ่มต้นของแต่ละหนี้ ณ วันก่อน from
-  //    ใช้ p0 ถ้ามีและ start < from; ถ้าไม่มี p0 ให้ fallback เป็น pcur (กรณีสร้างภายหลังหรือ snapshot)
-  const daily = []; // ผลรวมรายวัน (principal + accrued)
+  const daily = [];
   const ONE_DAY_RATE = (annualPercent) => (Number(annualPercent||0) / 100) / 365;
-
-  // สร้างสำเนาสถานะหนี้เพื่อจำลอง
   const states = debts.map(d => {
-    // กำหนดยอดตั้งต้น ณ "ก่อน from"
     let principal = 0;
-    if (d.p0 > 0 && d.start && d.start < from) {
-      principal = d.p0;
-    } else if (d.pcur > 0 && d.start && d.start < from) {
-      // ถ้าไม่มี p0 แต่มี pcur และเริ่มก่อนช่วง ให้ใช้ pcur เป็นฐาน
-      principal = d.pcur;
-    }
-    return {
-      id: d.id,
-      rate: d.rate,
-      start: d.start,
-      principal,
-      accrued: 0, // เริ่มดอกค้างจาก 0 (จะสะสมจากวันแรกของช่วงเป็นต้นไป)
-    };
+    if (d.p0 > 0 && d.start && d.start < from) principal = d.p0;
+    else if (d.pcur > 0 && d.start && d.start < from) principal = d.pcur;
+    return { id: d.id, rate: d.rate, start: d.start, principal, accrued: 0 };
   });
 
-  // ก่อนเริ่มวนวัน: รวมผลจาก TX ที่เกิด "ก่อน from" เข้าไปใน principal (เฉพาะเงินต้น)
   for (const st of states){
-    // หาจาก tx ที่เกิดก่อนช่วงของหนี้นี้
     const txBefore = txItems
       .filter(t => t.debt_id === st.id && t.date < from)
       .sort((a,b)=> a.date.localeCompare(b.date));
-    // เติม/หักยอดเงินต้นตามลำดับเวลา
     for (const t of txBefore){
       if (t.type === 'borrow') st.principal += t.amount;
       if (t.type === 'repay')  st.principal = Math.max(0, st.principal - t.principal_paid);
-      // ดอกที่เคยจ่ายก่อนช่วงเราไม่ตามย้อนหลัง ให้เริ่มสะสมดอกใหม่ในช่วงที่เลือกดู
     }
   }
 
-  // 4) วนแต่ละวันในช่วง: สะสมดอก + ปรับจาก TX ในวันนั้น ๆ
   for (const day of days){
-    // 4.1 คิดดอกต่อวันจาก "principal ณ เช้าวันนั้น"
     for (const st of states){
-      // ถ้าหนี้เปิดหลังวันนี้ ยังไม่เริ่มคิด
       if (st.start && st.start > day) continue;
-      if (st.principal > 0){
-        st.accrued += st.principal * ONE_DAY_RATE(st.rate);
-      }
+      if (st.principal > 0) st.accrued += st.principal * ONE_DAY_RATE(st.rate);
     }
-
-    // 4.2 ปรับตาม TX ใน "day"
     for (const st of states){
       const key = `${st.id}__${day}`;
       const list = txByDebtDate[key] || [];
-      if (!list.length) continue;
       for (const t of list){
-        if (t.type === 'borrow'){
-          st.principal += t.amount; // เงินกู้เพิ่มเงินต้น
-        } else if (t.type === 'repay'){
-          // จ่ายดอก
+        if (t.type === 'borrow'){ st.principal += t.amount; }
+        else if (t.type === 'repay'){
           st.accrued = Math.max(0, st.accrued - (t.interest_paid||0));
-          // จ่ายต้น
           st.principal = Math.max(0, st.principal - (t.principal_paid||0));
         }
       }
     }
-
-    // 4.3 รวมผล “สุทธิ” ทั้งหมดของวันนั้น
-    const sumToday = states.reduce((s,st)=> s + st.principal + st.accrued, 0);
-    daily.push(sumToday);
+    daily.push(states.reduce((s,st)=> s + st.principal + st.accrued, 0));
   }
 
-  // 5) แสดงผล
   const any = daily.some(v => v > 0);
   if (!any){ panelNo.classList.remove('hide'); chartDebtTS = null; return; }
 
@@ -1579,7 +1529,7 @@ function init(){
 }
 init();
 
-/* ===== [ADD-ON] Quick Add: category picker (เดิม) ===== */
+/* ===== [ADD-ON] Quick Add: category picker & chips ===== */
 (function setupQACategoryUI(){
   const row = document.querySelector('#tab-add .quickadd .row');
   if (!row) return;
@@ -1600,8 +1550,6 @@ function populateQACat(){
   const list = (typeof cats !== 'undefined' && cats[t]) ? cats[t] : [];
 
   sel.innerHTML = `<option value="">เลือกหมวด (อิงตามประเภทด้านบน)</option>`;
-
-  // กรอง “จ่ายหนี้/กู้หนี้” ออกจาก Quick Add เช่นกัน
   list
     .filter(c => !_isDebtFlowCat(c))
     .forEach(c => {
@@ -1652,22 +1600,26 @@ function _findCat(type, category_id){ const list = (typeof cats !== 'undefined' 
     if (_render_prev) _render_prev();
     const wrap = document.getElementById('quickWrap'); if (!wrap) return;
     const list = (function(){ try{ return JSON.parse(localStorage.getItem('fin_quick_add')||'[]'); }catch{return [];} })();
-    const chips = Array.from(wrap.querySelectorAll('.qa'));
-    chips.forEach((chip, idx)=>{
-      const q = list[idx]; if (!q) return;
+    wrap.innerHTML = '';
+    list.slice(0,12).forEach(q=>{
+      const chip = document.createElement('button');
+      chip.className = 'qa btn-ghost';
+      chip.style.margin = '0 .5rem .5rem 0';
+      chip.textContent = `${q.label}`;
+      chip.addEventListener('click', ()=> quickAddCommit(q));
       const name = q.category_name || (q.category_id ? (_findCat(q.type, q.category_id)?.name_th || '') : '');
-      if (name && !chip.dataset.decorated){
+      if (name){
         chip.textContent = `${q.label} • ${name}`;
-        const x = document.createElement('span'); x.className='x'; x.textContent='×';
-        x.addEventListener('click', (e)=>{ e.stopPropagation();
-          const next = list.filter(x=>x.id!==q.id);
-          localStorage.setItem('fin_quick_add', JSON.stringify(next));
-          if (typeof renderQAs==='function') renderQAs();
-          toast('ลบรายการด่วนแล้ว');
-        });
-        chip.appendChild(x);
-        chip.dataset.decorated = '1';
       }
+      const x = document.createElement('span'); x.className='x'; x.textContent='×'; x.style.marginLeft='.5rem';
+      x.addEventListener('click', (e)=>{ e.stopPropagation();
+        const next = list.filter(x=>x.id!==q.id);
+        localStorage.setItem('fin_quick_add', JSON.stringify(next));
+        if (typeof renderQAs==='function') renderQAs();
+        toast('ลบรายการด่วนแล้ว');
+      });
+      chip.appendChild(x);
+      wrap.appendChild(chip);
     });
   };
 })();
