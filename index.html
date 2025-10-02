@@ -1,9 +1,10 @@
+<!-- ===== FIN-JOD USER — PART 1/2 (BEGIN) ===== -->
 <!DOCTYPE html>
 <html lang="th">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-  <title>FIN-JOD · บันทึกรายรับ–รายจ่าย–ออมเงิน + หนี้ V.2.2</title>
+  <title>FIN-JOD · บันทึกรายรับ–รายจ่าย–ออมเงิน + หนี้</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
   <style>
@@ -100,7 +101,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>FIN-JOD · บันทึกรายรับ–รายจ่าย V.2.2</h1>
+    <h1>FIN-JOD · บันทึกรายรับ–รายจ่าย V.2.3</h1>
 
     <div id="loginBox" class="card">
       <div class="row">
@@ -135,6 +136,7 @@
         <button class="tabbtn"        role="tab" aria-selected="false" aria-controls="tab-list"  data-tab="list">รายการ</button>
       </div>
 
+      <!-- ===== Tab: Add ===== -->
       <section id="tab-add" class="section active card" tabindex="-1">
         <div class="row">
           <div class="col">
@@ -212,6 +214,7 @@
         </div>
       </section>
 
+      <!-- ===== Tab: Debt ===== -->
       <section id="tab-debt" class="section card" tabindex="-1">
         <div class="card" style="margin-bottom:1rem">
           <div class="muted" style="margin-bottom:.5rem">เพิ่มเจ้าหนี้</div>
@@ -287,6 +290,7 @@
         </div>
       </section>
 
+      <!-- ===== Tab: Dashboard ===== -->
       <section id="tab-dash" class="section card" tabindex="-1">
         <div class="row">
           <div class="col"><label for="fFrom">จาก</label><input id="fFrom" type="date"></div>
@@ -365,6 +369,7 @@
         </div>
       </section>
 
+      <!-- ===== Tab: List ===== -->
       <section id="tab-list" class="section card" tabindex="-1">
         <div class="muted" style="margin-bottom:.5rem">รายการในช่วงวันที่ (จากแดชบอร์ด)</div>
         <div class="table-viewport">
@@ -385,6 +390,7 @@
     </div>
   </div>
 
+  <!-- ===== Modals ===== -->
   <div id="editBackdrop" class="modal-backdrop" aria-hidden="true">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editTitle">
       <div id="editTitle" class="title">แก้ไขรายการ</div>
@@ -643,7 +649,7 @@ $('#btnLogout').addEventListener('click', ()=>{
 
 /* ===== CATEGORIES ===== */
 let cats = { income:[], expense:[], saving:[] };
-// ซ่อนหมวดระบบสำหรับหนี้ออกจากดรอปดาวน์ทั่วไป (ชื่อหมวดตรงกับที่ GAS ใส่)
+// ซ่อนหมวดระบบสำหรับหนี้ออกจากดรอปดาวน์ทั่วไป
 function _isDebtFlowCat(c){
   const n = String(c?.name_th || '').trim();
   return n === 'จ่ายหนี้' || n === 'กู้หนี้';
@@ -661,7 +667,6 @@ function populateCatSelect(){
   const sel = $('#txCat');
   sel.innerHTML = '';
 
-  // กรองหมวด “จ่ายหนี้/กู้หนี้” ออกจากดรอปดาวน์ปกติ
   (cats[t] || [])
     .filter(c => !_isDebtFlowCat(c))
     .forEach(c => {
@@ -671,7 +676,6 @@ function populateCatSelect(){
       sel.appendChild(o);
     });
 
-  // กันเคสไม่มีหมวดเหลือ
   if (!sel.options.length){
     const o = document.createElement('option');
     o.value = '';
@@ -853,7 +857,6 @@ function updateRangeUI(){
   else if (isYear) txt='ปีนี้';
   $('#rangeBadge').textContent = txt;
 }
-
 /* ===== DEBTS MODULE ===== */
 async function loadDebtsCache(){
   const r = await api('debts/list', {}, true, false);
@@ -970,8 +973,8 @@ async function refreshDash(silent){
   $('#sumExpense').textContent = fmt(exp);
   $('#sumSaving').textContent  = fmt(Math.max(0, savNet));
   $('#sumNet').textContent     = fmt(net);
+  $('#sumDebt').textContent    = rDebtSum.ok ? fmt(Number(rDebtSum.totals?.total||0)) : '—';
   colorizeNetCard(net);
-  $('#sumDebt').textContent = rDebtSum.ok ? fmt(Number(rDebtSum.totals?.total||0)) : '—';
   setKpiLoading(false);
 
   await updateBudgetUI(exp, Math.max(0,savNet), mk);
@@ -1104,7 +1107,7 @@ function populateEditCatSelect(){
   (cats[t]||[]).forEach(c=>{ const o=document.createElement('option'); o.value=c.category_id; o.textContent=c.name_th; sel.appendChild(o); });
 }
 
-/* [แก้ไข] ฟังก์ชันแก้ไข: รองรับ “จ่ายหนี้” (แยกต้น/ดอก) */
+/* รองรับ “จ่ายหนี้” (แยกต้น/ดอก) ตอนเปิดแก้ไข */
 async function openEditById(txId){
   if (!txId){ toast('ไม่พบรหัสรายการ', false); return; }
   let it = lastItems.find(x=> String(x.tx_id)===String(txId));
@@ -1156,7 +1159,6 @@ async function openEditById(txId){
     $('#editType').disabled = true;
     $('#editCat').disabled = true;
 
-    // ดึงรายละเอียดต้น/ดอกจากฝั่งหนี้
     if (it.debt_tx_id) {
       showOverlay(true);
       const debtDetails = await api('debts/tx/get', { tx_id: it.debt_tx_id });
@@ -1183,7 +1185,7 @@ function closeEdit(){ $('#editBackdrop').classList.remove('show'); $('#editBackd
 $('#btnCancel').addEventListener('click', closeEdit);
 $('#editType').addEventListener('change', populateEditCatSelect);
 
-/* [แก้ไข] บันทึกการแก้ไข: แยกเคสจ่ายหนี้ */
+/* บันทึกการแก้ไข: แยกเคส “จ่ายหนี้” */
 $('#btnUpdate').addEventListener('click', async ()=>{
   const tx_id = $('#editTxId').value;
   const isDebtRepay = $('#editBackdrop').dataset.isDebtRepay === 'true';
@@ -1247,7 +1249,7 @@ $('#btnUpdate').addEventListener('click', async ()=>{
   }
 });
 
-/* [แก้ไข] ลบแล้วรีเฟรชหนี้ด้วยเมื่อเป็นรายการจ่ายหนี้ */
+/* ลบแล้วรีเฟรชหนี้ด้วยเมื่อเป็นรายการจ่ายหนี้ */
 $('#btnDelete').addEventListener('click', async ()=>{
   $('#confirmMsg').textContent='ยืนยันการลบรายการนี้?';
   $('#confirmBackdrop').classList.add('show');
