@@ -1,10 +1,10 @@
-<!-- ===== FIN-JOD USER — PART 1/2 (BEGIN) ===== -->
+<!-- ===== FIN-JOD (with Remember Me) — PART 1/2 (BEGIN) ===== -->
 <!DOCTYPE html>
 <html lang="th">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-  <title>FIN-JOD · บันทึกรายรับ–รายจ่าย V.2.4</title>
+  <title>FIN-JOD · บันทึกรายรับ–รายจ่าย–ออมเงิน + หนี้</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
   <style>
@@ -97,11 +97,16 @@
     .pop-box{ display:flex; align-items:center; gap:.6rem; background:var(--panel); border:1px solid rgba(0,200,150,.35); border-radius:14px; padding:.9rem 1.1rem; box-shadow:0 16px 40px rgba(0,0,0,.55) }
     .pop-icon{ width:26px; height:26px; border-radius:50%; background:var(--green); color:#052a27; font-weight:900; display:flex; align-items:center; justify-content:center }
     .pop-msg{ font-weight:700 }
+
+    /* small helper for the remember row */
+    .remember-row{ display:flex; align-items:center; gap:.5rem; flex-wrap:wrap }
+    .remember-row input[type="checkbox"]{ width:auto; min-height:auto }
+    .helper-note{ font-size:.85rem; color:var(--muted) }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>FIN-JOD · บันทึกรายรับ–รายจ่าย V.2.3</h1>
+    <h1>FIN-JOD · บันทึกรายรับ–รายจ่าย V.2.4</h1>
 
     <div id="loginBox" class="card">
       <div class="row">
@@ -114,6 +119,20 @@
           <input id="inpPin" type="password" placeholder="กรอกรหัสผ่าน" autocomplete="current-password"/>
         </div>
       </div>
+
+      <!-- NEW: Remember me + auto login note -->
+      <div class="row" style="margin-top:-.5rem">
+        <div class="col" style="flex:1 1 100%">
+          <div class="remember-row">
+            <label style="display:flex; align-items:center; gap:.5rem; margin:0">
+              <input id="chkRemember" type="checkbox" />
+              <span>จำฉันไว้ (7 วัน)</span>
+            </label>
+            <span class="helper-note">* ใช้กับอุปกรณ์ส่วนตัวเท่านั้น</span>
+          </div>
+        </div>
+      </div>
+
       <div class="row">
         <button id="btnLogin" class="btn-green">เข้าสู่ระบบ</button>
         <span id="loginMsg" class="muted" style="align-self:center"></span>
@@ -496,6 +515,11 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbznJMWIaEVx9NQurW2PO38S
 const BUD_CAT_OVERALL   = '__BUDGET_OVERALL__';
 const BUD_CAT_SAVE_GOAL = '__SAVING_GOAL__';
 
+/* ===== REMEMBER ME SETTINGS (7 days) ===== */
+const REMEMBER_DAYS = 7;
+const REMEMBER_KEY = 'fin_remember';
+const REMEMBER_UNTIL_KEY = 'fin_remember_until';
+
 /* ===== STATE ===== */
 let token = localStorage.getItem('fin_token') || '';
 let displayName = localStorage.getItem('fin_name') || '';
@@ -554,14 +578,36 @@ async function api(path, payload={}, useToken=true, withOverlay=false){
     let j = await call();
     if ((!j.ok && j.error==='NETWORK_ERROR') && isList) j = await call();
     if (!j.ok && (j.error==='BAD_TOKEN' || j.error==='UNAUTHORIZED' || j.status===401)){
-      localStorage.removeItem('fin_token'); token=''; ensureLoginUI(); toast('เซสชันหมดอายุ โปรดเข้าสู่ระบบใหม่', false);
+      // token เสีย/หมดอายุ → ล้างสถานะจำฉันไว้ เพื่อกัน auto-loop
+      localStorage.removeItem('fin_token'); token='';
+      localStorage.removeItem('fin_pin');
+      localStorage.removeItem(REMEMBER_KEY);
+      localStorage.removeItem(REMEMBER_UNTIL_KEY);
+      ensureLoginUI(); toast('เซสชันหมดอายุ โปรดเข้าสู่ระบบใหม่', false);
     }
     if (!j.ok && j.error==='NON_JSON'){ toast('เกิดข้อผิดพลาดจากเซิร์ฟเวอร์ (ข้อมูลไม่เป็น JSON)', false); }
     return j;
   }finally{ if (withOverlay) showOverlay(false); }
 }
 
-/* ===== BUDGETS ===== */
+/* ===== REMEMBER / AUTO-LOGIN HELPERS ===== */
+function rememberEnabled(){ return localStorage.getItem(REMEMBER_KEY)==='1'; }
+function rememberStillValid(){
+  const until = Number(localStorage.getItem(REMEMBER_UNTIL_KEY)||0);
+  return until && Date.now() < until;
+}
+function scheduleRememberWindow(days=REMEMBER_DAYS){
+  const until = Date.now() + days*24*60*60*1000;
+  localStorage.setItem(REMEMBER_KEY,'1');
+  localStorage.setItem(REMEMBER_UNTIL_KEY, String(until));
+}
+function clearRemember(){
+  localStorage.removeItem('fin_pin');
+  localStorage.removeItem(REMEMBER_KEY);
+  localStorage.removeItem(REMEMBER_UNTIL_KEY);
+}
+
+/* ===== BUDGETS (headers only; logic in Part 2 continues) ===== */
 async function loadMonthSettingsFromAPI(mk){
   const r = await api('budgets/list', { month: mk }, true, false);
   let budget=0, goal=0;
@@ -610,6 +656,20 @@ function switchTab(name){
 $$('.tabbtn').forEach(b=> b.addEventListener('click', ()=> switchTab(b.dataset.tab)));
 
 function ensureLoginUI(){
+  const userStored = localStorage.getItem('fin_user') || '';
+  const pinStored  = localStorage.getItem('fin_pin')  || '';
+  const chk = $('#chkRemember'); if (chk) chk.checked = rememberEnabled() && rememberStillValid();
+
+  if (!token){
+    // ไม่มี token → อาจจะ auto-login ถ้า remember ยังไม่หมดอายุ
+    if (rememberEnabled() && rememberStillValid() && userStored && pinStored){
+      $('#inpUser').value = userStored;
+      $('#inpPin').value  = pinStored;
+      doLogin(true /*isAuto*/);
+      return;
+    }
+  }
+
   if (token){
     $('#loginBox').classList.add('hide'); $('#app').classList.remove('hide');
     $('#who').textContent = displayName || localStorage.getItem('fin_user') || '';
@@ -624,27 +684,61 @@ function ensureLoginUI(){
     });
     refreshDash(true);
   } else {
+    // เตรียม Prefill user จากรอบก่อน (แต่ยังไม่เติม PIN จนกว่าจะติ๊ก remember + valid)
+    if (userStored) $('#inpUser').value = userStored;
     $('#loginBox').classList.remove('hide'); $('#app').classList.add('hide');
   }
 }
 
-$('#btnLogin').addEventListener('click', doLogin);
-$('#inpPin').addEventListener('keydown', (e)=>{ if (e.key==='Enter') doLogin(); });
-async function doLogin(){
-  const user_id = $('#inpUser').value.trim();
-  const pin = $('#inpPin').value.trim();
+$('#btnLogin').addEventListener('click', ()=> doLogin(false));
+$('#inpPin').addEventListener('keydown', (e)=>{ if (e.key==='Enter') doLogin(false); });
+
+async function doLogin(isAuto){
+  const user_id = (isAuto ? (localStorage.getItem('fin_user')||'') : $('#inpUser').value.trim());
+  const pin     = (isAuto ? (localStorage.getItem('fin_pin') || $('#inpPin').value.trim()) : $('#inpPin').value.trim());
+
   if (!user_id || !pin){ $('#loginMsg').textContent='กรอกให้ครบ'; toast('กรอกให้ครบ', false); return; }
-  $('#btnLogin').disabled = true; $('#loginMsg').textContent = 'กำลังเข้าสู่ระบบ...';
+
+  $('#btnLogin').disabled = true; $('#loginMsg').textContent = isAuto ? 'กำลังเข้าสู่ระบบอัตโนมัติ...' : 'กำลังเข้าสู่ระบบ...';
   const j = await api('auth/login', { user_id, pin }, false, false);
   $('#btnLogin').disabled = false;
-  if (!j.ok){ const msg=(j.error==='USER_NOT_FOUND')?'ไม่พบบัญชีผู้ใช้':(j.error==='BAD_PIN')?'รหัสผ่านผิด':(j.message||'เข้าสู่ระบบไม่สำเร็จ'); $('#loginMsg').textContent=msg; toast(msg,false); return; }
+
+  if (!j.ok){
+    // ถ้า auto ล้มเหลว → ล้างสถานะจำไว้ เพื่อไม่วนซ้ำ
+    if (isAuto){ clearRemember(); $('#chkRemember') && ($('#chkRemember').checked = false); }
+    const msg=(j.error==='USER_NOT_FOUND')?'ไม่พบบัญชีผู้ใช้':(j.error==='BAD_PIN')?'รหัสผ่านผิด':(j.message||'เข้าสู่ระบบไม่สำเร็จ');
+    $('#loginMsg').textContent=msg; toast(msg,false); return;
+  }
+
   token = j.token; displayName = j.display_name || user_id;
-  localStorage.setItem('fin_token', token); localStorage.setItem('fin_user', user_id); localStorage.setItem('fin_name', displayName);
-  $('#loginMsg').textContent = ''; toast('ยินดีต้อนรับ!'); ensureLoginUI(); switchTab('add');
+  localStorage.setItem('fin_token', token);
+  localStorage.setItem('fin_user', user_id);
+  localStorage.setItem('fin_name', displayName);
+
+  // จำฉันไว้: ถ้าติ๊ก หรือกรณี auto ที่ยัง valid อยู่ให้ต่ออายุ
+  const rememberChecked = $('#chkRemember')?.checked || false;
+  if (rememberChecked || isAuto){
+    localStorage.setItem('fin_pin', pin);
+    scheduleRememberWindow(REMEMBER_DAYS);
+    if ($('#chkRemember')) $('#chkRemember').checked = true;
+  }else{
+    clearRemember();
+  }
+
+  $('#loginMsg').textContent = '';
+  toast('ยินดีต้อนรับ!');
+  ensureLoginUI(); switchTab('add');
 }
+
 $('#btnLogout').addEventListener('click', ()=>{
-  localStorage.removeItem('fin_token'); localStorage.removeItem('fin_name'); localStorage.removeItem('fin_user');
-  token=''; displayName=''; $('#inpUser').value=''; $('#inpPin').value=''; $('#loginMsg').textContent=''; ensureLoginUI();
+  localStorage.removeItem('fin_token');
+  localStorage.removeItem('fin_name');
+  // ออกจากระบบ → ล้าง PIN และ remember flag เพื่อความปลอดภัย
+  clearRemember();
+  token=''; displayName='';
+  $('#inpPin').value='';
+  $('#loginMsg').textContent='';
+  ensureLoginUI();
 });
 
 /* ===== CATEGORIES ===== */
@@ -792,7 +886,7 @@ async function saveTx(){
 $('#btnSave').addEventListener('click', ()=> saveTx());
 $('#tab-add').addEventListener('keydown', (e)=>{ if (e.key==='Enter'){ e.preventDefault(); saveTx(); } });
 
-/* ===== DASHBOARD ===== */
+/* ===== DASHBOARD (headers; details continue in Part 2) ===== */
 let chartExp=null, chartFlow=null, chartSavCum=null, chartDebtTS=null, chartPI=null;
 function setKpiLoading(on){
   ['sumIncome','sumExpense','sumSaving','sumNet','sumDebt'].forEach(id=>{
@@ -857,6 +951,7 @@ function updateRangeUI(){
   else if (isYear) txt='ปีนี้';
   $('#rangeBadge').textContent = txt;
 }
+  /* ========= PART SPLIT HERE — paste Part 2/2 right after this line ========= */
 /* ===== DEBTS MODULE ===== */
 async function loadDebtsCache(){
   const r = await api('debts/list', {}, true, false);
@@ -1625,6 +1720,8 @@ function _findCat(type, category_id){ const list = (typeof cats !== 'undefined' 
     });
   };
 })();
+
 </script>
 </body>
 </html>
+<!-- ===== FIN-JOD — PART 1/2 (END) ===== -->
