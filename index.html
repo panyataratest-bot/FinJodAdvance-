@@ -1,4 +1,4 @@
-<!-- ===== FIN-JOD (with Remember Me) — PART 1/2 (BEGIN) ===== -->
+<!-- ===== FIN-JOD (with Remember Me) — FULL APP — PART 1/2 (BEGIN) ===== -->
 <!DOCTYPE html>
 <html lang="th">
 <head>
@@ -106,7 +106,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>FIN-JOD · บันทึกรายรับ–รายจ่าย V.2.4</h1>
+    <h1>FIN-JOD · บันทึกรายรับ–รายจ่าย V.2.5</h1>
 
     <div id="loginBox" class="card">
       <div class="row">
@@ -374,7 +374,7 @@
             <div class="chart-wrap"><canvas id="chartDebtTS"></canvas></div>
           </div>
           <div class="card" style="flex:1 1 48%">
-            <div class="muted" style="margin-bottom:.5rem">จ่ายต้น vs จ่ายดอก (รายเดือน)</div>
+            <div class="muted" style="margin-bottom:.5รม">จ่ายต้น vs จ่ายดอก (รายเดือน)</div>
             <div id="noDataPI" class="muted hide">ยังไม่มีธุรกรรมหนี้ในช่วงนี้</div>
             <div class="chart-wrap"><canvas id="chartPI"></canvas></div>
           </div>
@@ -951,8 +951,8 @@ function updateRangeUI(){
   else if (isYear) txt='ปีนี้';
   $('#rangeBadge').textContent = txt;
 }
-  /* ========= PART SPLIT HERE — paste Part 2/2 right after this line ========= */
-/* ===== DEBTS MODULE ===== */
+  /* ========= PART SPLIT HERE — paste Part 2/2 right after this line ========= -->
+*/  /* ===== DEBTS MODULE ===== */
 async function loadDebtsCache(){
   const r = await api('debts/list', {}, true, false);
   debtsCache = r.ok ? (r.items||[]) : [];
@@ -1720,8 +1720,7 @@ function _findCat(type, category_id){ const list = (typeof cats !== 'undefined' 
     });
   };
 })();
-
 </script>
 </body>
 </html>
-<!-- ===== FIN-JOD — PART 1/2 (END) ===== -->
+<!-- ===== FIN-JOD — FULL APP — PART 2/2 (END) ===== -->
